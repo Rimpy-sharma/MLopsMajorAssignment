@@ -1,0 +1,229 @@
+name: Model Training and Testing
+
+on:
+  push:
+    branches:
+      - main
+      - docker_cicd
+    paths:
+      - 'train.py'
+      - 'test.py'
+      - 'requirements.txt'
+      - '.github/workflows/train-test.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'train.py'
+      - 'test.py'
+      - 'requirements.txt'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly on Sunday at midnight
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  train:
+    name: Train ML Model
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Display Python environment
+        run: |
+          echo "Python version: $(python --version)"
+          echo "Pip version: $(pip --version)"
+          pip list
+
+      - name: Validate train.py syntax
+        run: |
+          python -m py_compile train.py
+          echo "✅ train.py syntax is valid"
+
+      - name: Run model training
+        run: |
+          echo "Starting model training..."
+          python train.py
+          echo "✅ Training completed successfully"
+
+      - name: Verify model output
+        run: |
+          if [ -f savedmodel.pth ]; then
+            echo "✅ Model file created: savedmodel.pth"
+            ls -lh savedmodel.pth
+          else
+            echo "❌ Error: Model file not created!"
+            exit 1
+          fi
+          
+          if [ -f test_X.npy ]; then
+            echo "✅ Test data (X) saved: test_X.npy"
+            ls -lh test_X.npy
+          fi
+          
+          if [ -f test_y.npy ]; then
+            echo "✅ Test labels (y) saved: test_y.npy"
+            ls -lh test_y.npy
+          fi
+
+      - name: Upload trained model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model-${{ github.sha }}
+          path: |
+            savedmodel.pth
+            test_X.npy
+            test_y.npy
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Training summary
+        if: success()
+        run: |
+          echo "🎉 Training completed successfully!"
+          echo "Model artifacts uploaded and ready for testing."
+
+  test:
+    name: Test ML Model
+    runs-on: ubuntu-latest
+    needs: train
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download trained model
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model-${{ github.sha }}
+
+      - name: Verify downloaded artifacts
+        run: |
+          echo "Verifying model artifacts..."
+          ls -lh
+          
+          if [ ! -f savedmodel.pth ]; then
+            echo "❌ Error: savedmodel.pth not found!"
+            exit 1
+          fi
+          echo "✅ Model file found"
+          
+          if [ -f test_X.npy ] && [ -f test_y.npy ]; then
+            echo "✅ Test data files found"
+          fi
+
+      - name: Validate test.py syntax
+        run: |
+          python -m py_compile test.py
+          echo "✅ test.py syntax is valid"
+
+      - name: Run model tests
+        run: |
+          echo "Starting model evaluation..."
+          python test.py | tee test_output.txt
+          echo "✅ Testing completed"
+
+      - name: Extract test results
+        run: |
+          if grep -q "Test accuracy" test_output.txt; then
+            ACCURACY=$(grep "Test accuracy" test_output.txt | awk '{print $3}')
+            echo "📊 Model Test Accuracy: $ACCURACY"
+            
+            # Check if accuracy meets threshold (e.g., > 0.5)
+            THRESHOLD=0.5
+            if (( $(echo "$ACCURACY > $THRESHOLD" | bc -l) )); then
+              echo "✅ Model performance is acceptable (> $THRESHOLD)"
+            else
+              echo "⚠️  Warning: Model accuracy is below threshold ($THRESHOLD)"
+            fi
+          else
+            echo "⚠️  Could not extract accuracy from test output"
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.sha }}
+          path: test_output.txt
+          retention-days: 30
+
+      - name: Testing summary
+        if: success()
+        run: |
+          echo "🎉 Model testing completed successfully!"
+          cat test_output.txt
+
+  performance-check:
+    name: Model Performance Check
+    runs-on: ubuntu-latest
+    needs: test
+    if: always()
+    
+    steps:
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-${{ github.sha }}
+
+      - name: Performance summary
+        run: |
+          echo "## 📊 Model Performance Summary"
+          echo "================================"
+          cat test_output.txt
+          echo "================================"
+          
+          if grep -q "Test accuracy" test_output.txt; then
+            ACCURACY=$(grep "Test accuracy" test_output.txt | awk '{print $3}')
+            echo ""
+            echo "✅ Model Accuracy: $ACCURACY"
+            echo "✅ Training Job: ${{ needs.train.result }}"
+            echo "✅ Testing Job: ${{ needs.test.result }}"
+            echo ""
+            echo "Model is ready for deployment! 🚀"
+          fi
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Would comment model performance on PR #${{ github.event.pull_request.number }}"
+          # Requires GITHUB_TOKEN permissions to post comments
