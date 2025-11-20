@@ -13,7 +13,7 @@ spec:
         app: mlop2i-app
     spec:
       containers:
-      - name:mlop2i-app
+      - name: mlop2i-app
         image: <YOUR_DOCKERHUB_USERNAME>/mlop2i-app:latest
         ports:
         - containerPort: 5000
