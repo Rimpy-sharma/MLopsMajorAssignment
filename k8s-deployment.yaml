@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlop2i-app-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mlop2i-app
+  template:
+    metadata:
+      labels:
+        app: mlop2i-app
+    spec:
+      containers:
+      - name:mlop2i-app
+        image: <YOUR_DOCKERHUB_USERNAME>/mlop2i-app:latest
+        ports:
+        - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlop2i-app-service
+spec:
+  selector:
+    app: mlop2i-app
+  type: LoadBalancer
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 5000
