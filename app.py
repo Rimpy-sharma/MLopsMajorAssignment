@@ -4,11 +4,22 @@ import joblib
 from PIL import Image  # type: ignore
 import numpy as np
 import io
+import os
 
 app = Flask(__name__)
 MODEL_PATH = "savedmodel.pth"
 
-model = joblib.load(MODEL_PATH)
+# Lazy load model
+model = None
+
+def get_model():
+    """Load model on first request to avoid startup issues"""
+    global model
+    if model is None:
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(f"Model file '{MODEL_PATH}' not found. Please run train.py first.")
+        model = joblib.load(MODEL_PATH)
+    return model
 
 HTML = """
 <!doctype html>
@@ -18,6 +29,9 @@ HTML = """
   <input type=file name=file>
   <input type=submit value=Upload>
 </form>
+{% if error %}
+  <h2 style="color: red;">{{ error }}</h2>
+{% endif %}
 {% if pred is not none %}
   <h2>Predicted class: {{ pred }}</h2>
 {% endif %}
@@ -35,14 +49,19 @@ def preprocess_image(file_stream):
 @app.route("/", methods=["GET", "POST"])
 def index():
     pred = None
+    error = None
     if request.method == "POST":
         f = request.files.get("file")
         if f:
-            data = f.read()
-            X = preprocess_image(data)
-            label = int(model.predict(X)[0])
-            pred = label
-    return render_template_string(HTML, pred=pred)
+            try:
+                data = f.read()
+                X = preprocess_image(data)
+                m = get_model()
+                label = int(m.predict(X)[0])
+                pred = label
+            except Exception as e:
+                error = f"Error: {str(e)}"
+    return render_template_string(HTML, pred=pred, error=error)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
