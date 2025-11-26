@@ -1,7 +1,7 @@
 # app.py
 from flask import Flask, request, render_template_string, redirect, url_for
 import joblib
-from PIL import Image
+from PIL import Image  # type: ignore
 import numpy as np
 import io
 

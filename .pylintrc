@@ -1,0 +1,9 @@
+# pylintrc or .pylintrc
+[MESSAGES CONTROL]
+disable=import-error
+
+[TYPECHECK]
+ignored-modules=PIL
+
+[BASIC]
+good-names=X,y,f,i,j,k,df,id,app

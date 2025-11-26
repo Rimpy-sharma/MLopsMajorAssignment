@@ -206,6 +206,9 @@ jobs:
           name: test-results-${{ github.sha }}
 
       - name: Performance summary
+        env:
+          TRAIN_STATUS: ${{ needs.train.result }}
+          TEST_STATUS: ${{ needs.test.result }}
         run: |
           echo "## 📊 Model Performance Summary"
           echo "================================"
@@ -216,8 +219,8 @@ jobs:
             ACCURACY=$(grep "Test accuracy" test_output.txt | awk '{print $3}')
             echo ""
             echo "✅ Model Accuracy: $ACCURACY"
-            echo "✅ Training Job: ${{ needs.train.result }}"
-            echo "✅ Testing Job: ${{ needs.test.result }}"
+            echo "✅ Training Job: $TRAIN_STATUS"
+            echo "✅ Testing Job: $TEST_STATUS"
             echo ""
             echo "Model is ready for deployment! 🚀"
           fi

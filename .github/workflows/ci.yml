@@ -257,8 +257,11 @@ jobs:
 
       - name: Check if Docker secrets exist
         id: check-secrets
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASS: ${{ secrets.DOCKER_PASSWORD }}
         run: |
-          if [ -n "${{ secrets.DOCKER_USERNAME }}" ] && [ -n "${{ secrets.DOCKER_PASSWORD }}" ]; then
+          if [ -n "$DOCKER_USER" ] && [ -n "$DOCKER_PASS" ]; then
             echo "secrets_exist=true" >> $GITHUB_OUTPUT
           else
             echo "secrets_exist=false" >> $GITHUB_OUTPUT
@@ -274,10 +277,12 @@ jobs:
       - name: Extract metadata for Docker
         if: steps.check-secrets.outputs.secrets_exist == 'true'
         id: meta
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
         run: |
-          TAGS="${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest"
-          TAGS="$TAGS,${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}"
-          TAGS="$TAGS,${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.ref_name }}"
+          TAGS="$DOCKER_USER/${{ env.DOCKER_IMAGE_NAME }}:latest"
+          TAGS="$TAGS,$DOCKER_USER/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}"
+          TAGS="$TAGS,$DOCKER_USER/${{ env.DOCKER_IMAGE_NAME }}:${{ github.ref_name }}"
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
@@ -312,13 +317,17 @@ jobs:
           version: 'latest'
 
       - name: Configure kubectl
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         run: |
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+          echo "$KUBE_CONFIG" | base64 -d > kubeconfig
           export KUBECONFIG=$(pwd)/kubeconfig
 
       - name: Update Kubernetes deployment
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
         run: |
-          sed -i "s|<YOUR_DOCKERHUB_USERNAME>/mlop2i-app:latest|${{ secrets.DOCKER_USERNAME }}/mlop2i-app:latest|g" k8s-deployment.yaml
+          sed -i "s|<YOUR_DOCKERHUB_USERNAME>/mlop2i-app:latest|$DOCKER_USER/mlop2i-app:latest|g" k8s-deployment.yaml
           kubectl apply -f k8s-deployment.yaml --validate=false
           kubectl rollout status deployment/mlop2i-app-deployment --timeout=5m
 
